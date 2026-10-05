@@ -1,0 +1,127 @@
+'use client';
+
+import { useT } from '@/context/LocaleContext';
+
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { BriefcaseBusiness, Building2, CalendarDays, CheckCircle2, Clock3, MapPin, Pencil, Plus, Trash2, Users, XCircle } from 'lucide-react';
+import { useApp } from '@/context/AppContext';
+import type { ApplicationStatus } from '@/types';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/shadcn/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/shadcn/select';
+import { Label } from '@/components/shadcn/label';
+import { Avatar } from '@/components/ui/Avatar';
+
+import { ResumeLink } from '@/components/ResumeLink';
+
+function hasPassedDeadline(deadline: string) {
+  const [year, month, day] = deadline.split('-').map(Number);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(year, month - 1, day).getTime() < today.getTime();
+}
+
+const statusConfig: Record<ApplicationStatus, { label: string; tone: 'neutral' | 'accent' | 'success' | 'warning' | 'danger'; icon: typeof Clock3 }> = {
+  PENDING: { label: 'Chờ xem', tone: 'warning', icon: Clock3 },
+  REVIEWED: { label: 'Đã xem', tone: 'accent', icon: CheckCircle2 },
+  ACCEPTED: { label: 'Đã nhận', tone: 'success', icon: CheckCircle2 },
+  REJECTED: { label: 'Từ chối', tone: 'danger', icon: XCircle },
+};
+
+export default function CompanyDashboard() {
+  const t = useT();
+  const { currentUser, companyProfile, jobs, applications, updateApplicationStatus, removeJob } = useApp();
+
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const run = async (action: () => Promise<void>) => { setError(''); setBusy(true); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Không thể lưu thay đổi.'); } finally { setBusy(false); } };
+
+  const companyJobs = useMemo(
+    () => jobs.filter((job) => job.companyId === currentUser?.id),
+    [currentUser?.id, jobs],
+  );
+  const companyJobIds = useMemo(() => new Set(companyJobs.map((job) => job.id)), [companyJobs]);
+  const companyApplications = useMemo(() => applications.filter((application) => companyJobIds.has(application.jobId)), [applications, companyJobIds]);
+  const totalQuota = companyJobs.reduce((total, job) => total + (job.quota ?? 0), 0);
+
+  if (!currentUser || currentUser.role !== 'COMPANY') {
+    return (
+      <div className="company-page">
+        <div className="im-container">
+          <section className="company-guard ui-card">
+            <Building2 size={42} aria-hidden="true" />
+            <h1>{t("Dashboard doanh nghiệp")}</h1>
+            <p>{t("Vui lòng đăng nhập bằng tài khoản doanh nghiệp để quản lý tin tuyển dụng.")}</p>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  const handleDelete = (jobId: string, title: string) => {
+    if (window.confirm(`${t('Xóa tin tuyển dụng')} “${title}”?`)) void run(() => removeJob(jobId));
+  };
+
+  return (
+    <div className="company-page">
+      <div className="im-container">
+        <section className="company-page-heading company-page-heading--dashboard">
+          <div className="company-heading-icon" aria-hidden="true"><BriefcaseBusiness size={22} /></div>
+          <div>
+            <p className="company-kicker">{t("Không gian tuyển dụng")}</p>
+            <h1>{t("Xin chào,")} {companyProfile.companyName || currentUser.name}</h1>
+            <p>{t("Theo dõi tin tuyển dụng, chỉ tiêu và ứng viên trên cùng một màn hình.")}</p>
+          </div>
+          <div className="company-heading-actions">
+            <Button asChild variant="outline"><Link href="/company/profile"><Building2 size={17} aria-hidden="true" /> {t("Hồ sơ công ty")}</Link></Button>
+            <Button asChild><Link href="/company/jobs/create"><Plus size={17} aria-hidden="true" /> {t("Đăng tin mới")}</Link></Button>
+          </div>
+        </section>
+
+        {error && <p className="ui-error" role="alert">{t(error)}</p>}
+        <section className="company-stats" aria-label={t("Tổng quan tuyển dụng")}>
+          <div className="company-stat"><span className="company-stat__icon company-stat__icon--deep"><BriefcaseBusiness size={18} /></span><div><strong>{companyJobs.length}</strong><span>{t("Tin đang quản lý")}</span></div></div>
+          <div className="company-stat"><span className="company-stat__icon company-stat__icon--dark"><Users size={18} /></span><div><strong>{companyApplications.length}</strong><span>{t("Hồ sơ nhận được")}</span></div></div>
+          <div className="company-stat"><span className="company-stat__icon company-stat__icon--base"><CheckCircle2 size={18} /></span><div><strong>{totalQuota}</strong><span>{t("Tổng chỉ tiêu")}</span></div></div>
+          <div className="company-stat"><span className="company-stat__icon company-stat__icon--bright"><Clock3 size={18} /></span><div><strong>{companyApplications.filter((application) => application.status === 'PENDING').length}</strong><span>{t("Hồ sơ chờ xử lý")}</span></div></div>
+        </section>
+
+        <div className="company-dashboard-grid">
+          <section className="company-panel">
+            <div className="company-section-heading">
+              <div><h2>{t("Tin tuyển dụng của bạn")}</h2><p>{t("Chỉnh sửa, xem nhanh hoặc gỡ các tin đã đăng.")}</p></div>
+              <Link href="/company/jobs/create" className="company-inline-link">{t("+ Đăng tin")}</Link>
+            </div>
+            <div className="company-job-list">
+              {companyJobs.length === 0 ? (
+                <div className="ui-state"><BriefcaseBusiness size={28} aria-hidden="true" /><p className="ui-state__title">{t("Chưa có tin tuyển dụng")}</p><p className="ui-state__description">{t("Bắt đầu bằng cách tạo tin đầu tiên để tiếp cận ứng viên phù hợp.")}</p><Button asChild><Link href="/company/jobs/create">{t("Đăng tin đầu tiên")}</Link></Button></div>
+              ) : companyJobs.map((job) => {
+                const jobApplications = companyApplications.filter((application) => application.jobId === job.id).length;
+                const expired = Boolean(job.deadline && hasPassedDeadline(job.deadline));
+                return (
+                  <article className="company-job-card" key={job.id}>
+                    <div className="company-job-card__main"><div className="company-job-card__title-row"><h3>{job.title}</h3>{job.isFeatured ? <Badge tone="accent">{t("Nổi bật")}</Badge> : null}</div><p className="company-job-card__company">{job.industry}</p><div className="company-job-card__meta"><span><MapPin size={15} /> {job.location}</span><span><CalendarDays size={15} /> {job.deadline ? `${t('Hạn nhận hồ sơ')}: ${job.deadline}` : t("Không giới hạn")}</span><span><Users size={15} /> {jobApplications} {t("ứng viên")}</span></div></div>
+                    <div className="company-job-card__side"><Badge tone={expired ? "danger" : "success"}>{expired ? t("Tin tuyển dụng đã hết hạn nhận hồ sơ.") : t("Đang tuyển")}</Badge><div className="company-job-card__actions"><Button asChild variant="outline" size="sm"><Link href={`/company/jobs/${job.id}`}><Pencil size={15} aria-hidden="true" /> {t("Sửa")}</Link></Button><Button variant="ghost" size="sm" disabled={busy} aria-busy={busy} onClick={() => handleDelete(job.id, job.title)}><Trash2 size={15} aria-hidden="true" /> {t("Xóa")}</Button></div></div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="company-panel">
+            <div className="company-section-heading"><div><h2>{t("Ứng viên mới nhất")}</h2><p>{t("Xem hồ sơ và cập nhật trạng thái xử lý.")}</p></div><span className="company-count-label">{companyApplications.length} {t("hồ sơ")}</span></div>
+            <div className="company-candidate-list">
+              {companyApplications.length === 0 ? <div className="ui-state"><Users size={28} /><p className="ui-state__title">{t("Chưa có ứng viên")}</p><p className="ui-state__description">{t("Ứng viên sẽ xuất hiện tại đây sau khi nộp đơn vào tin tuyển dụng của bạn.")}</p></div> : companyApplications.map((application) => {
+                const job = companyJobs.find((item) => item.id === application.jobId);
+                const config = statusConfig[application.status];
+                const StatusIcon = config.icon;
+                return <article className="company-candidate" key={application.id}><Avatar name={application.studentName} src={application.studentAvatarUrl} size={40} /><div className="company-candidate__body"><div className="company-candidate__top"><div><h3>{application.studentName}</h3><p>{job?.title ?? t("Tin tuyển dụng")} · GPA {application.studentGpa.toFixed(1)}</p></div><Badge tone={config.tone}><StatusIcon size={13} aria-hidden="true" /> {t(config.label)}</Badge></div><div className="company-candidate__meta"><span>{application.studentUniversity}</span><span>{application.studentMajor}</span></div><p className="ui-hint">{application.studentSkills.join(', ')}</p>{application.coverLetter && <p>{application.coverLetter}</p>}<div className="company-candidate__actions"><span className="company-cv-label"><ResumeLink path={application.cvUrl} name={application.cvFileName} /></span><div><Label className="sr-only" htmlFor={`candidate-status-${application.id}`}>{t("Trạng thái hồ sơ của")} {application.studentName}</Label><Select value={application.status} onValueChange={(value) => void run(() => updateApplicationStatus(application.id, value as ApplicationStatus))} disabled={busy}><SelectTrigger id={`candidate-status-${application.id}`} size="sm" className="w-full min-w-40" aria-busy={busy}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PENDING">{t("Chờ xem")}</SelectItem><SelectItem value="REVIEWED">{t("Đã xem")}</SelectItem><SelectItem value="ACCEPTED">{t("Đã nhận")}</SelectItem><SelectItem value="REJECTED">{t("Từ chối")}</SelectItem></SelectContent></Select></div></div></div></article>;
+              })}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
